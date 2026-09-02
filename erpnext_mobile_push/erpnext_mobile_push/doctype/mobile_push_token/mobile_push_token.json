@@ -1,0 +1,113 @@
+{
+ "actions": [],
+ "allow_rename": 0,
+ "autoname": "field:token_hash",
+ "creation": "2026-09-02 00:00:00.000000",
+ "description": "One registered device. Written by the mobile app when a user signs in, and deleted when they sign out or when Firebase reports the device gone.",
+ "doctype": "DocType",
+ "editable_grid": 0,
+ "engine": "InnoDB",
+ "field_order": [
+  "user",
+  "enabled",
+  "column_break_device",
+  "platform",
+  "device_name",
+  "last_seen",
+  "section_break_token",
+  "token_hash",
+  "token"
+ ],
+ "fields": [
+  {
+   "fieldname": "user",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "label": "User",
+   "options": "User",
+   "reqd": 1,
+   "search_index": 1
+  },
+  {
+   "default": "1",
+   "description": "Cleared to stop sending to this device without deleting the record.",
+   "fieldname": "enabled",
+   "fieldtype": "Check",
+   "label": "Enabled"
+  },
+  {
+   "fieldname": "column_break_device",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "platform",
+   "fieldtype": "Select",
+   "in_list_view": 1,
+   "label": "Platform",
+   "options": "\nandroid\nios\nmacos\nweb"
+  },
+  {
+   "description": "What the device calls itself, so a person can tell which one to revoke.",
+   "fieldname": "device_name",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Device"
+  },
+  {
+   "description": "Updated every time the app starts. A device not seen for four months is cleared out by the weekly job.",
+   "fieldname": "last_seen",
+   "fieldtype": "Datetime",
+   "in_list_view": 1,
+   "label": "Last Seen"
+  },
+  {
+   "fieldname": "section_break_token",
+   "fieldtype": "Section Break",
+   "label": "Firebase"
+  },
+  {
+   "description": "SHA-256 of the token. This is the document name: an FCM token is longer than the 140 characters a name allows, and hashing it makes one-row-per-device something the database enforces rather than something the code has to remember.",
+   "fieldname": "token_hash",
+   "fieldtype": "Data",
+   "label": "Token Hash",
+   "read_only": 1,
+   "reqd": 1,
+   "unique": 1
+  },
+  {
+   "description": "The FCM registration token itself \u2014 the address Firebase delivers to.",
+   "fieldname": "token",
+   "fieldtype": "Small Text",
+   "label": "Token",
+   "read_only": 1,
+   "reqd": 1
+  }
+ ],
+ "index_web_pages_for_search": 0,
+ "links": [],
+ "modified": "2026-09-02 00:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "ERPNext Mobile Push",
+ "name": "Mobile Push Token",
+ "naming_rule": "By fieldname",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 0,
+   "export": 0,
+   "print": 0,
+   "read": 1,
+   "report": 1,
+   "role": "System Manager",
+   "share": 0,
+   "write": 1
+  }
+ ],
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "states": [],
+ "track_changes": 0
+}

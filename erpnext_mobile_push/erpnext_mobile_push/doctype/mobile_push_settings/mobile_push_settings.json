@@ -1,0 +1,78 @@
+{
+ "actions": [],
+ "creation": "2026-09-02 00:00:00.000000",
+ "description": "Firebase credentials for pushing Frappe notifications to the mobile app.",
+ "doctype": "DocType",
+ "editable_grid": 0,
+ "engine": "InnoDB",
+ "field_order": [
+  "enabled",
+  "section_break_credentials",
+  "credentials_help",
+  "service_account_json",
+  "section_break_test",
+  "test_help"
+ ],
+ "fields": [
+  {
+   "default": "0",
+   "description": "While this is off, nothing is queued and nothing is sent. The app falls back to what it did before: notifications appear only while it is open.",
+   "fieldname": "enabled",
+   "fieldtype": "Check",
+   "label": "Send Push Notifications"
+  },
+  {
+   "fieldname": "section_break_credentials",
+   "fieldtype": "Section Break",
+   "label": "Firebase Service Account"
+  },
+  {
+   "fieldname": "credentials_help",
+   "fieldtype": "HTML",
+   "options": "<p>In the <a href=\"https://console.firebase.google.com\" target=\"_blank\">Firebase console</a>, open <b>Project settings \u2192 Service accounts</b> and choose <b>Generate new private key</b>. Paste the whole downloaded file below.</p><p>This key can send a notification to every device in the project. Anyone who can read this field holds it, which is why only System Manager can. To keep it out of the database entirely, leave the field blank and set <code>mobile_push_service_account</code> in <code>site_config.json</code> instead \u2014 the site config wins over this field when both are present.</p>"
+  },
+  {
+   "description": "The whole JSON key file, pasted as it was downloaded.",
+   "fieldname": "service_account_json",
+   "fieldtype": "Code",
+   "label": "Service Account JSON",
+   "options": "JSON"
+  },
+  {
+   "fieldname": "section_break_test",
+   "fieldtype": "Section Break",
+   "label": "Check It Works"
+  },
+  {
+   "fieldname": "test_help",
+   "fieldtype": "HTML",
+   "options": "<p>Sign in on the mobile app first, allow notifications when it asks, then use <b>Send Test Notification</b> above. It reports each of your registered devices separately with Firebase's own error message, so a setup that is not working says which part of it is wrong.</p>"
+  }
+ ],
+ "index_web_pages_for_search": 0,
+ "issingle": 1,
+ "links": [],
+ "modified": "2026-09-02 00:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "ERPNext Mobile Push",
+ "name": "Mobile Push Settings",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "create": 1,
+   "delete": 0,
+   "email": 0,
+   "export": 0,
+   "print": 0,
+   "read": 1,
+   "report": 0,
+   "role": "System Manager",
+   "share": 0,
+   "write": 1
+  }
+ ],
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "states": [],
+ "track_changes": 1
+}

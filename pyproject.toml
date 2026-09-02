@@ -1,0 +1,23 @@
+[project]
+name = "erpnext_mobile_push"
+authors = [{ name = "erpnext_mobile" }]
+description = "Pushes Frappe notifications to the erpnext_mobile app through Firebase Cloud Messaging"
+requires-python = ">=3.10"
+readme = "README.md"
+dynamic = ["version"]
+
+# Deliberately empty.
+#
+# The two things this app needs to mint a Google OAuth token — PyJWT, and the
+# `cryptography` backend that gives it RS256 — are already direct dependencies
+# of Frappe itself, so declaring them here would only pin a second opinion on
+# versions the bench has already settled. Nothing else is used that Frappe does
+# not ship: the FCM call is `requests`, which Frappe also brings.
+dependencies = []
+
+[build-system]
+requires = ["flit_core >=3.4,<4"]
+build-backend = "flit_core.buildapi"
+
+[tool.bench.frappe-dependencies]
+frappe = ">=15.0.0,<17.0.0"

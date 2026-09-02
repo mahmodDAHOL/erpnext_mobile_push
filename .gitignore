@@ -1,0 +1,12 @@
+# Never the private key. A Firebase service account key can send a notification
+# to every device in the project; one committed here is one that has to be
+# revoked in the console, not deleted from a branch.
+*service-account*.json
+*serviceAccount*.json
+firebase-adminsdk-*.json
+
+__pycache__/
+*.pyc
+*.egg-info/
+dist/
+build/
