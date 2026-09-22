@@ -271,27 +271,32 @@ def set_password(user: str, token: str, new_password: str):
 	"""
 	name = _resolve_user(user)
 	if not name:
-		_no_such_token()
+		_no_such_token("no User matches the login id given")
 
 	cache = _cache()
 	state = cache.get_value(_token_key(name))
 	if not state:
-		_no_such_token()
+		_no_such_token(f"no token held for {name}: it expired, or the cache was cleared")
 
 	if not secrets.compare_digest(state["digest"], _digest((token or "").strip(), state["salt"])):
-		_no_such_token()
+		_no_such_token(f"the token sent for {name} is not the one that was issued")
 
 	if not new_password:
 		frappe.throw(_("Please choose a password."))
 
-	# Spent before it is used, not after. A policy refusal below throws, and a
-	# token still sitting in the cache after a throw is a token that outlives
-	# the one attempt it was minted for.
-	cache.delete_value(_token_key(name))
-
 	doc = frappe.get_doc("User", name)
 	doc.new_password = new_password
 	doc.save(ignore_permissions=True)
+
+	# Spent once the password is actually set, not before.
+	#
+	# It was the other way round, and that was wrong: the save below runs the
+	# site's password policy, so a password the site judged too weak threw past
+	# a token that had already been destroyed. The person was then told their
+	# reset had expired — for the crime of choosing a short password — and had
+	# to start again from the email. A token that outlives a *refusal* is fine;
+	# what it must not outlive is a success.
+	cache.delete_value(_token_key(name))
 
 	# Whoever knew the old password no longer gets to keep a session open on
 	# it. Best effort: a site that cannot clear sessions has still had its
@@ -306,5 +311,18 @@ def set_password(user: str, token: str, new_password: str):
 	return {"ok": True}
 
 
-def _no_such_token():
+def _no_such_token(reason: str):
+	"""Said for a token that was never issued, has run out, or does not match.
+
+	One message for all three, so the call cannot be used to find out which
+	login ids have a reset in flight — but the reason is written to the Error
+	Log, because otherwise the three are indistinguishable from the outside and
+	a deployment fault reads exactly like an expiry.
+	"""
+	frappe.log_error(title="Password reset: token refused", message=reason)
+	# Committed before the throw, or it would not survive it: `frappe.throw`
+	# aborts the request and Frappe rolls the transaction back, taking the log
+	# row with it. Nothing else is pending here — everything above this point
+	# is a read — so there is nothing else for the commit to carry.
+	frappe.db.commit()
 	frappe.throw(_("This reset has expired. Please start again."))
