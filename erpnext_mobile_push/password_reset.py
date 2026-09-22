@@ -181,10 +181,23 @@ def request_code(user: str):
 		expires_in_sec=CODE_TTL,
 	)
 
-	# Sent on this request rather than queued. A queued email waits for the
-	# scheduler's next pass, and a code that lands four minutes after it was
-	# asked for is a code the person has already given up on.
-	frappe.sendmail(
+	# Handed to a worker, not sent on this request.
+	#
+	# It was sent inline, on the reasoning that a queued email waits for the
+	# scheduler's next pass and a code that lands four minutes late is a code
+	# nobody is still waiting for. That was right about the scheduler and wrong
+	# about the fix: sending inline means this request holds open for the whole
+	# SMTP conversation — greeting, TLS, auth, delivery — which against a
+	# remote mail host regularly runs past thirty seconds. The phone gives up,
+	# says the server took too long, and drops the reset; the email arrives
+	# anyway, to somebody now looking at an error.
+	#
+	# The short queue is neither: an RQ worker takes it in well under a second,
+	# so delivery starts at once and the caller is answered at once. It is also
+	# what this app already does for a push.
+	frappe.enqueue(
+		"frappe.sendmail",
+		queue="short",
 		recipients=[email],
 		subject=_("Your password reset code"),
 		message=_(
@@ -194,7 +207,6 @@ def request_code(user: str):
 			"<p>If this was not you, you can ignore this message — nothing has "
 			"changed, and nobody can change it without this code.</p>"
 		).format(name, code, CODE_TTL // 60),
-		now=True,
 	)
 
 	return {"sent": True, "hint": _mask(email), "expires_in": CODE_TTL}
