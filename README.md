@@ -3,11 +3,11 @@
 A Frappe app that pushes the site's notifications to the `erpnext_mobile` app,
 so they arrive on the phone whether or not the app is running.
 
-Without it the mobile app can only poll: it asks the site for new notifications
-every thirty seconds *while it is open and in front of someone*, and draws them
-as a popup inside its own window. Close the app and nothing arrives at all.
-This is the other half — the site pushes, and Android or iOS draws the
-notification itself.
+Without it the mobile app announces nothing: it asks the site for the unread
+count every thirty seconds *while it is open and in front of someone*, which
+only keeps the number on the bell honest. With it, the site pushes the moment
+it writes the row and Android or iOS draws the notification itself, with the
+app backgrounded, killed, or never opened since the last reboot.
 
 ## What it hooks
 
@@ -48,6 +48,15 @@ than by adding `google-auth` to the bench.
 
 The mobile app and this app have to point at **the same Firebase project**.
 
+**Two different files, and they are easy to confuse.** `google-services.json`
+(and `GoogleService-Info.plist`) is *client* config: it identifies the app to
+Firebase, ships inside the APK, and is not a secret — the `api_key` in it is
+public by design and restricted by the app's package name. The *service
+account* key is a server credential that can push a notification to every
+device in the project. It belongs on the site and nowhere else: never in the
+mobile app's repository, never in the APK. Google scans public repositories for
+these and revokes them on sight, which is the *better* outcome.
+
 1. Create a project at <https://console.firebase.google.com> (or use an
    existing one).
 2. **For the server — this app.** Open **Project settings → Service accounts →
@@ -61,7 +70,9 @@ The mobile app and this app have to point at **the same Firebase project**.
    the Runner target in Xcode. See the push notifications section of the mobile
    app's `README.md`, which also covers the APNs key iOS needs.
 4. Enable the **Firebase Cloud Messaging API (V1)** for the project in the
-   Google Cloud console if it is not already on.
+   Google Cloud console if it is not already on
+   (`console.cloud.google.com/apis/library/fcm.googleapis.com`). Left off,
+   every send fails with a 403 that does not obviously say so.
 
 Then, on the site, open **Mobile Push Settings**:
 
@@ -133,3 +144,60 @@ refusing a token that already belongs to someone else. The same phone signing
 in as somebody else keeps its FCM token, and a row that went on naming the
 previous user would ring that user's notifications on a phone they are no
 longer signed in to.
+
+## Resetting a forgotten password
+
+`password_reset.py` is the site half of the mobile app's "Forget Password?"
+flow. It sits in this app because this app is already the one the mobile client
+talks to; nothing about it is push.
+
+Frappe's own reset is no use here. It emails a link to the address on the User
+record — the work address, which is the one the person cannot read, because
+reading it is what they need the password for. What they *can* read is the
+personal address HR holds on their Employee record, in `personal_email`. So
+this emails a short code there instead.
+
+Three whitelisted, guest-callable methods, in order:
+
+```
+erpnext_mobile_push.password_reset.request_code   user
+erpnext_mobile_push.password_reset.verify_code    user, code
+erpnext_mobile_push.password_reset.set_password   user, token, new_password
+```
+
+The middle step is the point of the design. A code is six digits typed on a
+phone; it is short because it has to be, and short is guessable. So the code
+never sets a password — it buys a token (32 random bytes, ten minutes, one
+use), and only the token is accepted by `set_password`. The guessable secret is
+only ever checked against a counter that stops at five wrong tries and then
+throws the code away; the secret that can actually change a password cannot be
+guessed at all.
+
+Codes and tokens live in Redis under a TTL, salted and hashed, never in the
+database. They are secrets with a fifteen-minute life: a table of live password
+reset codes is a thing worth not having, and a cache entry expires by itself
+rather than needing a cleanup job that might not run.
+
+**It does not say whether an account exists.** Every failure to send — no such
+user, no Employee record, an Employee record with `personal_email` blank, a
+disabled account — gives the same answer, naming the department that can do it
+by hand. A form that answered "no such user" would be a way to read the staff
+list off the login screen, one guess at a time. The address the code went to is
+returned only in masked form (`m*****d@gmail.com`), which is enough for its
+owner to recognise and no use to anyone else.
+
+Rate limited per login id per hour by `frappe.rate_limiter`: five codes, twenty
+code checks, ten password sets.
+
+The password itself is set through the User document rather than by writing a
+hash, so the site's own policy runs — minimum length, the strength score in
+System Settings, any reuse rules. Every session open on the old password is
+closed afterwards.
+
+### What it needs
+
+An outgoing **Email Account** on the site, because the code is sent with
+`now=True` rather than queued: a code that lands four minutes after it was
+asked for is a code the person has already given up on. No DocType, no
+migration, nothing to configure — `bench --site your-site.example migrate` and
+a restart is enough.
