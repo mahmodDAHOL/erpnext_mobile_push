@@ -1,10 +1,11 @@
-"""Resetting a forgotten password by a code sent to a personal email address.
+"""Resetting a forgotten password by a code sent to an address on file.
 
-Frappe already has a password reset, and it is no use here: it emails a link to
-the address on the User record, which is the work address — the one the person
-cannot get at, because getting at it is what they need the password for. What
-they can read is the personal address HR holds on their Employee record, in
-`personal_email`. So this sends a short code there instead.
+Frappe already has a password reset and it is no use here: it emails a *link*,
+which means a working session in a browser, on a site whose desk the person may
+have no business in. This sends a six-digit code the mobile app can take.
+
+Where the code goes is settled by `_destination`, and the caller is never told
+which of the two it picked.
 
 Three steps, three calls, and a deliberate gap between each:
 
@@ -96,18 +97,6 @@ def _cannot_send():
 	)
 
 
-def _mask(email: str) -> str:
-	"""`mahmoud@gmail.com` → `m*****d@gmail.com`.
-
-	Enough for the owner to recognise which of their addresses it went to, not
-	enough for anyone else to learn an address they did not already know.
-	"""
-	name, _sep, domain = email.partition("@")
-	if len(name) <= 2:
-		return f"{name[:1]}*@{domain}"
-	return f"{name[0]}{'*' * (len(name) - 2)}{name[-1]}@{domain}"
-
-
 def _resolve_user(given: str) -> str | None:
 	"""The User this login id names, if any.
 
@@ -127,10 +116,10 @@ def _resolve_user(given: str) -> str | None:
 def _personal_email(user: str) -> str | None:
 	"""The address HR holds for this person, off their Employee record.
 
-	Read with `ignore_permissions` by way of `frappe.db.get_value`, which does
-	not apply them — the caller is a guest and has no business reading Employee
-	rows, but this one field, for this one purpose, is the entire feature.
-	Nothing is returned to the caller but a masked form of it.
+	Read by way of `frappe.db.get_value`, which does not apply permissions —
+	the caller is a guest and has no business reading Employee rows, but this
+	one field, for this one purpose, is the entire fallback. It is never
+	returned to the caller, in any form.
 	"""
 	employee = frappe.db.get_value(
 		"Employee",
@@ -151,10 +140,62 @@ def _personal_email(user: str) -> str | None:
 	return email if _EMAIL.match(email) else None
 
 
+def _destination(user: str) -> str | None:
+	"""Where this person's code goes: their own address, or HR's copy.
+
+	The account's own address first. On this site most people sign in with an
+	address they actually read, so the one they just typed into the app is
+	usually the right place to send to and asking HR's records for a second
+	opinion only adds a way to fail.
+
+	It is the address *on the User record* rather than the string the caller
+	typed, which matters more than it looks: the two are the same thing
+	whenever the login id is an address, and where they are not — someone
+	signing in by `username` — the record is right and the typed string is not
+	an address at all. Taking the caller's word for it would turn this into a
+	form that emails a code anywhere it is told to.
+
+	Falls back to `personal_email` when the account has no usable address of
+	its own, which is what an internal-only login looks like.
+	"""
+	own = (frappe.db.get_value("User", user, "email") or "").strip()
+	if _EMAIL.match(own):
+		return own
+	return _personal_email(user)
+
+
+@frappe.whitelist(allow_guest=True)
+# Two limits, because they stop different things. The first counts every check
+# from one address whatever login id it names, which is the one that matters:
+# this call answers "is this a real account", and without a ceiling on the
+# *rate* it answers that for the whole staff list in an afternoon. The second
+# keeps any one id from being hammered.
+@rate_limit(limit=30, seconds=60 * 60, methods=["POST"])
+@rate_limit(key="user", limit=10, seconds=60 * 60, methods=["POST"])
+def can_reset(user: str):
+	"""Whether a reset can be started for this login id.
+
+	Answers a plain yes or no, and gives no reason for a no: an account that
+	does not exist, one that is disabled, and one with no address anywhere —
+	neither on the User record nor at HR — are the same answer, so the caller
+	cannot tell a stranger from a colleague whose record is incomplete.
+
+	This is a courtesy to the app, not a gate. `request_code` makes every one
+	of these checks again for itself, because a yes here is a fact about a
+	moment ago and the only call that matters is the one that sends.
+	"""
+	name = _resolve_user(user)
+	if not name:
+		return {"ok": False}
+	if not frappe.db.get_value("User", name, "enabled"):
+		return {"ok": False}
+	return {"ok": bool(_destination(name))}
+
+
 @frappe.whitelist(allow_guest=True)
 @rate_limit(key="user", limit=5, seconds=60 * 60, methods=["POST"])
 def request_code(user: str):
-	"""Emails a fresh code to the personal address on this person's Employee record.
+	"""Emails a fresh code to whichever address this person has on file.
 
 	Rate limited twice over: five an hour for any one login id, by the
 	decorator, and — because the decorator keys on what the caller typed — the
@@ -169,7 +210,7 @@ def request_code(user: str):
 	if not enabled:
 		_cannot_send()
 
-	email = _personal_email(name)
+	email = _destination(name)
 	if not email:
 		_cannot_send()
 
@@ -209,7 +250,11 @@ def request_code(user: str):
 		).format(name, code, CODE_TTL // 60),
 	)
 
-	return {"sent": True, "hint": _mask(email), "expires_in": CODE_TTL}
+	# Nothing about *where* it went comes back. Two addresses are in play and
+	# which one was used is a fact about the account rather than about the
+	# request — a caller who learns that the fallback was needed has learned
+	# something about somebody else's records.
+	return {"sent": True, "expires_in": CODE_TTL}
 
 
 @frappe.whitelist(allow_guest=True)

@@ -151,19 +151,48 @@ longer signed in to.
 flow. It sits in this app because this app is already the one the mobile client
 talks to; nothing about it is push.
 
-Frappe's own reset is no use here. It emails a link to the address on the User
-record — the work address, which is the one the person cannot read, because
-reading it is what they need the password for. What they *can* read is the
-personal address HR holds on their Employee record, in `personal_email`. So
-this emails a short code there instead.
+Frappe's own reset is no use here. It emails a *link*, which wants a browser
+and a working session on a desk the person may have no business in. This emails
+a six-digit code the app can take instead.
 
-Three whitelisted, guest-callable methods, in order:
+**Where the code goes.** The address on the User record first — on this site
+most people sign in with an address they actually read, so the one they typed
+into the app is usually the right place to send to. Where the account has no
+usable address of its own, which is what an internal-only login looks like, it
+falls back to `personal_email` on the matching Employee record.
+
+It is the address *on the record*, never the string the caller typed. The two
+are the same thing whenever the login id is an address; where they are not —
+someone signing in by `username` — the record is right and the typed string is
+not an address at all. Taking the caller's word for it would turn this into a
+form that emails a reset code anywhere it is told to.
+
+Which of the two was used is never reported, in the response or on screen. A
+caller who learns that the fallback was needed has learned something about
+somebody else's records.
+
+Four whitelisted, guest-callable methods:
 
 ```
+erpnext_mobile_push.password_reset.can_reset      user
 erpnext_mobile_push.password_reset.request_code   user
 erpnext_mobile_push.password_reset.verify_code    user, code
 erpnext_mobile_push.password_reset.set_password   user, token, new_password
 ```
+
+`can_reset` is a database lookup and nothing else — no mail — so the app can
+wait on it before moving off the first screen and tell someone their login id
+is not registered rather than sending them to a screen to wait for an email
+that will never come. It is a courtesy, not a gate: `request_code` makes every
+one of the same checks again for itself, because a yes from `can_reset` is a
+fact about a moment ago.
+
+**This is account enumeration, and it is deliberate** — it was asked for. A
+form that answers "not registered" can be used to read the staff list one guess
+at a time. What stops it being quick is the rate limit: thirty checks an hour
+from one address *whatever login id they name*, on top of ten an hour for any
+one id. `can_reset` gives no reason for a no, so an unknown account, a disabled
+one and one with no address anywhere are indistinguishable.
 
 The middle step is the point of the design. A code is six digits typed on a
 phone; it is short because it has to be, and short is guessable. So the code
@@ -179,12 +208,10 @@ reset codes is a thing worth not having, and a cache entry expires by itself
 rather than needing a cleanup job that might not run.
 
 **It does not say whether an account exists.** Every failure to send — no such
-user, no Employee record, an Employee record with `personal_email` blank, a
-disabled account — gives the same answer, naming the department that can do it
-by hand. A form that answered "no such user" would be a way to read the staff
-list off the login screen, one guess at a time. The address the code went to is
-returned only in masked form (`m*****d@gmail.com`), which is enough for its
-owner to recognise and no use to anyone else.
+user, no address on the account and none on file at HR, a disabled account —
+gives the same answer, naming the department that can do it by hand. A form
+that answered "no such user" would be a way to read the staff list off the
+login screen, one guess at a time.
 
 Rate limited per login id per hour by `frappe.rate_limiter`: five codes, twenty
 code checks, ten password sets.
